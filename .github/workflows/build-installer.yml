@@ -19,7 +19,7 @@ jobs:
         shell: pwsh
         run: |
           git clone https://github.com/henrypp/routine.git routine
-          git -C routine checkout --detach 134dadcb477f2a5ad3ab4d5c13da3aef4aadd389
+          git -C routine checkout --detach 2f7ce6a228dbbaa7295b9635ab971d2768a0ae9b
           git clone https://github.com/henrypp/builder.git builder
           git -C builder checkout --detach 76c06f89840f75a107f9de99efea7998938ebdb6
       - name: Build x64 and ARM64
