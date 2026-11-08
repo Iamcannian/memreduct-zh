@@ -1,0 +1,52 @@
+name: Build Windows installer
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-installer.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: memreduct
+          persist-credentials: false
+      - name: Fetch pinned build dependencies
+        shell: pwsh
+        run: |
+          git clone https://github.com/henrypp/routine.git routine
+          git -C routine checkout --detach 134dadcb477f2a5ad3ab4d5c13da3aef4aadd389
+          git clone https://github.com/henrypp/builder.git builder
+          git -C builder checkout --detach 76c06f89840f75a107f9de99efea7998938ebdb6
+      - name: Build x64 and ARM64
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $msbuild = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe' | Select-Object -First 1
+          if (!$msbuild) { throw 'MSBuild not found' }
+          foreach ($platform in 'x64', 'ARM64') {
+            & $msbuild memreduct/memreduct.sln /m /p:Configuration=Release "/p:Platform=$platform"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Package installer
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
+          $bin = (Resolve-Path memreduct/bin).Path
+          Copy-Item "$bin/History.txt","$bin/License.txt","$bin/Readme.txt","$bin/memreduct.lng" "$bin/64"
+          New-Item -ItemType Directory dist | Out-Null
+          $installer = Join-Path (Resolve-Path dist).Path 'memreduct-zh-3.5.3-setup.exe'
+          & $nsis /V3 "/DAPP_FILES_DIR=$bin" '/DAPP_NAME=Mem Reduct' '/DAPP_NAME_SHORT=memreduct' '/DAPP_VERSION=3.5.3' "/XOutFile `"$installer`"" builder/src/setup_script.nsi
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $installer)) { throw 'Installer packaging failed' }
+          Get-FileHash $installer | ForEach-Object Hash | Set-Content "$installer.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memreduct-zh-3.5.3-installer
+          path: dist/
+          if-no-files-found: error
